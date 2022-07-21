@@ -61,7 +61,32 @@ def load_configs_model(model_name='darknet', configs=None):
         ####### ID_S3_EX1-3 START #######     
         #######
         print("student task ID_S3_EX1-3")
+        configs.model_path = os.path.join(parent_path, 'tools', 'objdet_models', 'resnet')
+        configs.pretrained_filename = os.path.join(configs.model_path, 'pretrained', 'fpn_resnet_18_epoch_300.pth')
+        configs.pin_memory = True
+        configs.distributed = False  # For testing on 1 GPU only
+        configs.arch = 'fpn_resnet'
+        configs.input_size = (608, 608)
+        configs.hm_size = (152, 152)
+        configs.down_ratio = 4
+        configs.imagenet_pretrained = False
+        configs.head_conv = 64
+        configs.num_classes = 3
+        configs.num_center_offset = 2
+        configs.num_z = 1
+        configs.num_dim = 3
+        configs.num_direction = 2  # sin, cos
 
+        configs.heads = {
+            'hm_cen': configs.num_classes,
+            'cen_offset': configs.num_center_offset,
+            'direction': configs.num_direction,
+            'z_coor': configs.num_z,
+            'dim': configs.num_dim
+        }
+
+        configs.conf_thresh = 0.5
+        configs.nms_thresh = 0.4
         #######
         ####### ID_S3_EX1-3 END #######     
 
@@ -114,7 +139,10 @@ def create_model(configs):
     
     elif 'fpn_resnet' in configs.arch:
         print('using ResNet architecture with feature pyramid')
-        
+
+        num_layers = int(18)
+        model = fpn_resnet.get_pose_net(num_layers=num_layers, heads=configs.heads, head_conv=configs.head_conv,
+                                        imagenet_pretrained=configs.imagenet_pretrained)
         ####### ID_S3_EX1-4 START #######     
         #######
         print("student task ID_S3_EX1-4")
@@ -163,32 +191,57 @@ def detect_objects(input_bev_maps, model, configs):
 
         elif 'fpn_resnet' in configs.arch:
             # decode output and perform post-processing
-            
+            decoded_outputs = decode(hm_cen=outputs['hm_cen'],
+                                     cen_offset=outputs['cen_offset'],
+                                     direction=outputs['direction'],
+                                     z_coor=outputs['z_coor'],
+                                     dim=outputs['dim']
+                                     )
             ####### ID_S3_EX1-5 START #######     
             #######
             print("student task ID_S3_EX1-5")
+            # perform post-processing
+            output_post_temp = post_processing(decoded_outputs, configs)
+            output_post = output_post_temp[0]
+            detections = []
+            detection = output_post[1]
+            for obj in detection:
+                scr, x, y, z, h, w, l, yaw = obj
+                detections.append([1, x, y, z, h, w, l, yaw])
 
             #######
             ####### ID_S3_EX1-5 END #######     
 
-            
-
-    ####### ID_S3_EX2 START #######     
+    ####### ID_S3_EX2 START #######
     #######
     # Extract 3d bounding boxes from model response
     print("student task ID_S3_EX2")
-    objects = [] 
+    objects = []
 
     ## step 1 : check whether there are any detections
 
-        ## step 2 : loop over all detections
-        
-            ## step 3 : perform the conversion using the limits for x, y and z set in the configs structure
-        
-            ## step 4 : append the current object to the 'objects' array
-        
+    ## step 2 : loop over all detections
+
+    ## step 3 : perform the conversion using the limits for x, y and z set in the configs structure
+
+    ## step 4 : append the current object to the 'objects' array
+
+    if len(detections) > 0:
+        # convert to meters
+        for det in detections:
+            id, x, y, z, h, w, l, yaw = det
+
+            x_ = y / configs.bev_height * (configs.lim_x[1] - configs.lim_x[0])
+            y_ = x / configs.bev_width * (configs.lim_y[1] - configs.lim_y[0]) - (configs.lim_y[1] - configs.lim_y[0])/2.0
+            w_ = w / configs.bev_width * (configs.lim_y[1] - configs.lim_y[0])
+            l_ = l / configs.bev_height * (configs.lim_x[1] - configs.lim_x[0])
+            z_ = z + configs.lim_z[0]
+            if ((x_ >= configs.lim_x[0]) and (x_ <= configs.lim_x[1])
+                and (y_ >= configs.lim_y[0]) and (y_ <= configs.lim_y[1])
+                and (z_ >= configs.lim_z[0]) and (z_ <= configs.lim_z[1])):
+                objects.append([id, x_, y_, z_, h, w_, l_, yaw])
+
     #######
     ####### ID_S3_EX2 START #######   
-    
-    return objects    
 
+    return objects
