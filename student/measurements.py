@@ -42,122 +42,111 @@ class Sensor:
         self.veh_to_sens = np.linalg.inv(self.sens_to_veh) # transformation vehicle to sensor coordinates
     
     def in_fov(self, x):
-        # check if an object x can be seen by this sensor
-        ############
-        # TODO Step 4: implement a function that returns True if x lies in the sensor's field of view, 
-        # otherwise False.
-        ############
+        pos_in_veh_cord = np.ones((4, 1))
+        pos_in_veh_cord[0:3] = x[0:3]
+        pos_in_sens_cord = self.veh_to_sens * pos_in_veh_cord
+        visible = False
+        if pos_in_sens_cord[0] > 0:
+            alpha = np.arctan(pos_in_sens_cord[1] / pos_in_sens_cord[0])
+            if alpha > self.fov[0] and alpha < self.fov[1]:
+                visible = True
 
-        return True
-        
-        ############
-        # END student code
-        ############ 
-             
-    def get_hx(self, x):    
+        return visible
+
+    def get_hx(self, x):
         # calculate nonlinear measurement expectation value h(x)   
         if self.name == 'lidar':
-            pos_veh = np.ones((4, 1)) # homogeneous coordinates
-            pos_veh[0:3] = x[0:3] 
-            pos_sens = self.veh_to_sens*pos_veh # transform from vehicle to lidar coordinates
+            pos_veh = np.ones((4, 1))  # homogeneous coordinates
+            pos_veh[0:3] = x[0:3]
+            pos_sens = self.veh_to_sens * pos_veh  # transform from vehicle to lidar coordinates
             return pos_sens[0:3]
         elif self.name == 'camera':
-            
-            ############
-            # TODO Step 4: implement nonlinear camera measurement function h:
-            # - transform position estimate from vehicle to camera coordinates
-            # - project from camera to image coordinates
-            # - make sure to not divide by zero, raise an error if needed
-            # - return h(x)
-            ############
+            pos_in_veh_cord = np.ones((4, 1))
+            pos_in_veh_cord[0:3] = x[0:3]
+            pos_in_sens_cord = self.veh_to_sens * pos_in_veh_cord
 
-            pass
-        
-            ############
-            # END student code
-            ############ 
-        
+            hx = np.zeros((2, 1))
+            if pos_in_sens_cord[0] == 0:
+                raise NameError('Jacobian not defined for x[0]=0!')
+            else:
+                hx[0, 0] = self.c_i - self.f_i * pos_in_sens_cord[1] / pos_in_sens_cord[0]  # project to image coordinates
+                hx[1, 0] = self.c_j - self.f_j * pos_in_sens_cord[2] / pos_in_sens_cord[0]
+
+            return hx
+
     def get_H(self, x):
         # calculate Jacobian H at current x from h(x)
         H = np.matrix(np.zeros((self.dim_meas, params.dim_state)))
-        R = self.veh_to_sens[0:3, 0:3] # rotation
-        T = self.veh_to_sens[0:3, 3] # translation
+        R = self.veh_to_sens[0:3, 0:3]  # rotation
+        T = self.veh_to_sens[0:3, 3]  # translation
         if self.name == 'lidar':
             H[0:3, 0:3] = R
         elif self.name == 'camera':
             # check and print error message if dividing by zero
-            if R[0,0]*x[0] + R[0,1]*x[1] + R[0,2]*x[2] + T[0] == 0: 
+            if R[0, 0] * x[0] + R[0, 1] * x[1] + R[0, 2] * x[2] + T[0] == 0:
                 raise NameError('Jacobian not defined for this x!')
             else:
-                H[0,0] = self.f_i * (-R[1,0] / (R[0,0]*x[0] + R[0,1]*x[1] + R[0,2]*x[2] + T[0])
-                                    + R[0,0] * (R[1,0]*x[0] + R[1,1]*x[1] + R[1,2]*x[2] + T[1]) \
-                                        / ((R[0,0]*x[0] + R[0,1]*x[1] + R[0,2]*x[2] + T[0])**2))
-                H[1,0] = self.f_j * (-R[2,0] / (R[0,0]*x[0] + R[0,1]*x[1] + R[0,2]*x[2] + T[0])
-                                    + R[0,0] * (R[2,0]*x[0] + R[2,1]*x[1] + R[2,2]*x[2] + T[2]) \
-                                        / ((R[0,0]*x[0] + R[0,1]*x[1] + R[0,2]*x[2] + T[0])**2))
-                H[0,1] = self.f_i * (-R[1,1] / (R[0,0]*x[0] + R[0,1]*x[1] + R[0,2]*x[2] + T[0])
-                                    + R[0,1] * (R[1,0]*x[0] + R[1,1]*x[1] + R[1,2]*x[2] + T[1]) \
-                                        / ((R[0,0]*x[0] + R[0,1]*x[1] + R[0,2]*x[2] + T[0])**2))
-                H[1,1] = self.f_j * (-R[2,1] / (R[0,0]*x[0] + R[0,1]*x[1] + R[0,2]*x[2] + T[0])
-                                    + R[0,1] * (R[2,0]*x[0] + R[2,1]*x[1] + R[2,2]*x[2] + T[2]) \
-                                        / ((R[0,0]*x[0] + R[0,1]*x[1] + R[0,2]*x[2] + T[0])**2))
-                H[0,2] = self.f_i * (-R[1,2] / (R[0,0]*x[0] + R[0,1]*x[1] + R[0,2]*x[2] + T[0])
-                                    + R[0,2] * (R[1,0]*x[0] + R[1,1]*x[1] + R[1,2]*x[2] + T[1]) \
-                                        / ((R[0,0]*x[0] + R[0,1]*x[1] + R[0,2]*x[2] + T[0])**2))
-                H[1,2] = self.f_j * (-R[2,2] / (R[0,0]*x[0] + R[0,1]*x[1] + R[0,2]*x[2] + T[0])
-                                    + R[0,2] * (R[2,0]*x[0] + R[2,1]*x[1] + R[2,2]*x[2] + T[2]) \
-                                        / ((R[0,0]*x[0] + R[0,1]*x[1] + R[0,2]*x[2] + T[0])**2))
-        return H   
-        
+                H[0, 0] = self.f_i * (-R[1, 0] / (R[0, 0] * x[0] + R[0, 1] * x[1] + R[0, 2] * x[2] + T[0])
+                                      + R[0, 0] * (R[1, 0] * x[0] + R[1, 1] * x[1] + R[1, 2] * x[2] + T[1]) \
+                                      / ((R[0, 0] * x[0] + R[0, 1] * x[1] + R[0, 2] * x[2] + T[0]) ** 2))
+                H[1, 0] = self.f_j * (-R[2, 0] / (R[0, 0] * x[0] + R[0, 1] * x[1] + R[0, 2] * x[2] + T[0])
+                                      + R[0, 0] * (R[2, 0] * x[0] + R[2, 1] * x[1] + R[2, 2] * x[2] + T[2]) \
+                                      / ((R[0, 0] * x[0] + R[0, 1] * x[1] + R[0, 2] * x[2] + T[0]) ** 2))
+                H[0, 1] = self.f_i * (-R[1, 1] / (R[0, 0] * x[0] + R[0, 1] * x[1] + R[0, 2] * x[2] + T[0])
+                                      + R[0, 1] * (R[1, 0] * x[0] + R[1, 1] * x[1] + R[1, 2] * x[2] + T[1]) \
+                                      / ((R[0, 0] * x[0] + R[0, 1] * x[1] + R[0, 2] * x[2] + T[0]) ** 2))
+                H[1, 1] = self.f_j * (-R[2, 1] / (R[0, 0] * x[0] + R[0, 1] * x[1] + R[0, 2] * x[2] + T[0])
+                                      + R[0, 1] * (R[2, 0] * x[0] + R[2, 1] * x[1] + R[2, 2] * x[2] + T[2]) \
+                                      / ((R[0, 0] * x[0] + R[0, 1] * x[1] + R[0, 2] * x[2] + T[0]) ** 2))
+                H[0, 2] = self.f_i * (-R[1, 2] / (R[0, 0] * x[0] + R[0, 1] * x[1] + R[0, 2] * x[2] + T[0])
+                                      + R[0, 2] * (R[1, 0] * x[0] + R[1, 1] * x[1] + R[1, 2] * x[2] + T[1]) \
+                                      / ((R[0, 0] * x[0] + R[0, 1] * x[1] + R[0, 2] * x[2] + T[0]) ** 2))
+                H[1, 2] = self.f_j * (-R[2, 2] / (R[0, 0] * x[0] + R[0, 1] * x[1] + R[0, 2] * x[2] + T[0])
+                                      + R[0, 2] * (R[2, 0] * x[0] + R[2, 1] * x[1] + R[2, 2] * x[2] + T[2]) \
+                                      / ((R[0, 0] * x[0] + R[0, 1] * x[1] + R[0, 2] * x[2] + T[0]) ** 2))
+        return H
+
     def generate_measurement(self, num_frame, z, meas_list):
-        # generate new measurement from this sensor and add to measurement list
-        ############
-        # TODO Step 4: remove restriction to lidar in order to include camera as well
-        ############
-        
-        if self.name == 'lidar':
-            meas = Measurement(num_frame, z, self)
-            meas_list.append(meas)
+        meas = Measurement(num_frame, z, self)
+        meas_list.append(meas)
         return meas_list
-        
-        ############
-        # END student code
-        ############ 
-        
-        
+
 ################### 
-        
+
 class Measurement:
     '''Measurement class including measurement values, covariance, timestamp, sensor'''
+
     def __init__(self, num_frame, z, sensor):
         # create measurement object
-        self.t = (num_frame - 1) * params.dt # time
-        self.sensor = sensor # sensor that generated this measurement
-        
+        self.t = (num_frame - 1) * params.dt  # time
+        self.sensor = sensor  # sensor that generated this measurement
+
         if sensor.name == 'lidar':
-            sigma_lidar_x = params.sigma_lidar_x # load params
+            sigma_lidar_x = params.sigma_lidar_x  # load params
             sigma_lidar_y = params.sigma_lidar_y
             sigma_lidar_z = params.sigma_lidar_z
-            self.z = np.zeros((sensor.dim_meas,1)) # measurement vector
+            self.z = np.zeros((sensor.dim_meas, 1))  # measurement vector
             self.z[0] = z[0]
             self.z[1] = z[1]
             self.z[2] = z[2]
-            self.R = np.matrix([[sigma_lidar_x**2, 0, 0], # measurement noise covariance matrix
-                                [0, sigma_lidar_y**2, 0], 
-                                [0, 0, sigma_lidar_z**2]])
-            
+            self.R = np.matrix([[sigma_lidar_x ** 2, 0, 0],  # measurement noise covariance matrix
+                                [0, sigma_lidar_y ** 2, 0],
+                                [0, 0, sigma_lidar_z ** 2]])
+
             self.width = z[4]
             self.length = z[5]
             self.height = z[3]
             self.yaw = z[6]
         elif sensor.name == 'camera':
-            
-            ############
-            # TODO Step 4: initialize camera measurement including z and R 
-            ############
+            sigma_cam_i = params.sigma_cam_i # load params
+            sigma_cam_j = params.sigma_cam_j
+            self.z = np.zeros((sensor.dim_meas, 1))  # measurement vector
+            self.z[0] = z[0]
+            self.z[1] = z[1]
+            self.R = np.matrix([[sigma_cam_i ** 2, 0],  # measurement noise covariance matrix
+                                [0, sigma_cam_j ** 2]])
 
-            pass
-        
-            ############
-            # END student code
-            ############ 
+            self.width = z[2]
+            self.length = z[3]
+            self.height = 0
+            self.yaw = 0
